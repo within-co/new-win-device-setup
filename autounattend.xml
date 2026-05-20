@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+╔══════════════════════════════════════════════════════════════════╗
+║   WITHIN — Universal Windows 11 Pro Deployment  v2.4            ║
+║   !! USE WITH WINDOWS 11 24H2 ISO ONLY !!                       ║
+║   Compatible: Dell & Lenovo (any model)                         ║
+║                                                                  ║
+║   - No product key needed (reads OEM key from UEFI firmware)    ║
+║   - Silently wipes disk and partitions (GPT/UEFI)               ║
+║   - Skips all OOBE screens                                      ║
+║   - Creates "within" local admin account                        ║
+║   - Auto-logs in once and runs within-setup.ps1                 ║
+║   - Script installs Dell/Lenovo drivers + RMM + MDM agents      ║
+║   - Signs out → user logs in with within.co Entra account       ║
+║                                                                  ║
+║   PLACE IN:                                                      ║
+║     USB:\autounattend.xml              (primary)                 ║
+║     USB:\sources\autounattend.xml      (24H2 safety copy)        ║
+╚══════════════════════════════════════════════════════════════════╝
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+  <!-- ════════════════════════════════════════════════════════════
+       PHASE 1 — Windows PE: Language + silent disk partitioning
+       ════════════════════════════════════════════════════════════ -->
+  <settings pass="windowsPE">
+
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <!--
+          No ProductKey element here.
+          Dell and Lenovo laptops have Windows 11 Pro OEM keys
+          embedded in their UEFI firmware — Windows reads it
+          automatically and activates without any key in this file.
+        -->
+      </UserData>
+
+      <!--
+        WillShowUI = Never forces Setup to use this disk layout
+        silently — no partition selection screen shown.
+        Works correctly on Windows 11 24H2.
+      -->
+      <DiskConfiguration>
+        <WillShowUI>Never</WillShowUI>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <!-- EFI System Partition (300 MB) -->
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>300</Size>
+            </CreatePartition>
+            <!-- Microsoft Reserved Partition (16 MB) -->
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>16</Size>
+            </CreatePartition>
+            <!-- Windows OS Partition (rest of disk) -->
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Label>System</Label>
+              <Format>FAT32</Format>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+              <Format>NTFS</Format>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <!-- Install Windows to partition 3 silently -->
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+          <WillShowUI>Never</WillShowUI>
+          <InstallToAvailablePartition>false</InstallToAvailablePartition>
+        </OSImage>
+      </ImageInstall>
+
+    </component>
+  </settings>
+
+  <!-- ════════════════════════════════════════════════════════════
+       PHASE 2 — Specialize: Identity settings
+       ════════════════════════════════════════════════════════════ -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <!-- Temporary name — within-setup.ps1 renames interactively -->
+      <ComputerName>WITHIN-PC</ComputerName>
+      <!--
+        TIME ZONE — update per office location if needed:
+        US East    → Eastern Standard Time
+        US Central → Central Standard Time
+        Colombia   → SA Pacific Standard Time
+        Mexico     → Central Standard Time (Mexico)
+      -->
+      <TimeZone>Eastern Standard Time</TimeZone>
+      <RegisteredOrganization>WITHIN</RegisteredOrganization>
+      <RegisteredOwner>WITHIN</RegisteredOwner>
+    </component>
+  </settings>
+
+  <!-- ════════════════════════════════════════════════════════════
+       PHASE 3 — OOBE: Skip all screens, create account, auto-login
+       ════════════════════════════════════════════════════════════ -->
+  <settings pass="oobeSystem">
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+
+      <!-- Skip every OOBE screen -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <!-- false = WiFi screen stays so machine can get online -->
+        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+
+      <!-- Create standard WITHIN local admin account -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>within</Name>
+            <DisplayName>within</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <!-- Kr1$t1n>4l3x — UTF-16LE Base64 encoded (not plain text) -->
+              <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
+              <PlainText>false</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- Auto-login ONCE as "within" to trigger the setup script -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>within</Username>
+        <LogonCount>1</LogonCount>
+        <Password>
+          <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
+          <PlainText>false</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <!-- Run within-setup.ps1 automatically on first login -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>WITHIN — Automated Device Setup (Dell + Lenovo)</Description>
+          <RequiresUserInput>false</RequiresUserInput>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "C:\Windows\Setup\Scripts\within-setup.ps1"</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+    </component>
+
+    <!-- Locale settings -->
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+  </settings>
+
+</unattend>
