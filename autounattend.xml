@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 ╔══════════════════════════════════════════════════════════════════╗
-║   WITHIN — Universal Windows 11 Pro Deployment  v2.4            ║
-║   !! USE WITH WINDOWS 11 24H2 ISO ONLY !!                       ║
-║   Compatible: Dell & Lenovo (any model)                         ║
+║   WITHIN - Universal Windows 11 Pro Deployment  v3.0            ║
+║   Compatible: Dell Pro 14 PC14250 + Lenovo (any model)          ║
+║   Works with: Windows 11 24H2 / 25H2 ISO via Rufus              ║
 ║                                                                  ║
-║   - No product key needed (reads OEM key from UEFI firmware)    ║
-║   - Silently wipes disk and partitions (GPT/UEFI)               ║
-║   - Skips all OOBE screens                                      ║
-║   - Creates "within" local admin account                        ║
-║   - Auto-logs in once and runs within-setup.ps1                 ║
-║   - Script installs Dell/Lenovo drivers + RMM + MDM agents      ║
-║   - Signs out → user logs in with within.co Entra account       ║
+║   KEY FIXES in this version:                                     ║
+║   1. UseConfigurationSet=true - tells Setup to process $OEM$    ║
+║   2. Script triggered from specialize pass via RunSynchronous   ║
+║      - bypasses OEM license block on OOBE.cmd/SetupComplete.cmd ║
+║   3. DriverPaths injects Intel VMD NVMe driver for Dell PC14250  ║
 ║                                                                  ║
-║   PLACE IN:                                                      ║
-║     USB:\autounattend.xml              (primary)                 ║
-║     USB:\sources\autounattend.xml      (24H2 safety copy)        ║
+║   REQUIRED USB STRUCTURE:                                        ║
+║   USB:\autounattend.xml                                          ║
+║   USB:\sources\autounattend.xml                                  ║
+║   USB:\drivers\vmd\iaStorVD.inf/.sys/.cat                        ║
+║   USB:\sources\$OEM$\$$\Setup\Scripts\OOBE.cmd (kept as backup) ║
 ╚══════════════════════════════════════════════════════════════════╝
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend"
           xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
 
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 1 — Windows PE: Language + silent disk partitioning
+       PHASE 1 - Windows PE: Language + VMD driver + disk setup
        ════════════════════════════════════════════════════════════ -->
   <settings pass="windowsPE">
 
@@ -46,38 +46,45 @@
 
       <UserData>
         <AcceptEula>true</AcceptEula>
-        <!--
-          No ProductKey element here.
-          Dell and Lenovo laptops have Windows 11 Pro OEM keys
-          embedded in their UEFI firmware — Windows reads it
-          automatically and activates without any key in this file.
-        -->
       </UserData>
 
       <!--
-        WillShowUI = Never forces Setup to use this disk layout
-        silently — no partition selection screen shown.
-        Works correctly on Windows 11 24H2.
+        UseConfigurationSet = true tells Windows Setup to look for
+        and process the $OEM$ folder on the USB during PE stage.
+        WITHOUT this, $OEM$ contents are never copied to the machine.
+        This was the missing piece causing OOBE.cmd/SetupComplete.cmd
+        to never appear in C:\Windows\Setup\Scripts\
       -->
+      <UseConfigurationSet>true</UseConfigurationSet>
+
+      <!--
+        Intel VMD NVMe driver injection - required for Dell Pro 14 PC14250
+        Fixes error 0x8004255A - 0x4002F during disk setup
+        Files must be at USB:\drivers\vmd\
+      -->
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1">
+          <Path>\drivers\vmd</Path>
+        </PathAndCredentials>
+      </DriverPaths>
+
+      <!-- Silent disk partitioning -->
       <DiskConfiguration>
         <WillShowUI>Never</WillShowUI>
         <Disk wcm:action="add">
           <DiskID>0</DiskID>
           <WillWipeDisk>true</WillWipeDisk>
           <CreatePartitions>
-            <!-- EFI System Partition (300 MB) -->
             <CreatePartition wcm:action="add">
               <Order>1</Order>
               <Type>EFI</Type>
               <Size>300</Size>
             </CreatePartition>
-            <!-- Microsoft Reserved Partition (16 MB) -->
             <CreatePartition wcm:action="add">
               <Order>2</Order>
               <Type>MSR</Type>
               <Size>16</Size>
             </CreatePartition>
-            <!-- Windows OS Partition (rest of disk) -->
             <CreatePartition wcm:action="add">
               <Order>3</Order>
               <Type>Primary</Type>
@@ -106,7 +113,6 @@
         </Disk>
       </DiskConfiguration>
 
-      <!-- Install Windows to partition 3 silently -->
       <ImageInstall>
         <OSImage>
           <InstallTo>
@@ -122,30 +128,86 @@
   </settings>
 
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 2 — Specialize: Identity settings
+       PHASE 2 - Specialize
+       This pass runs AFTER Windows is laid down but BEFORE OOBE.
+       RunSynchronous commands here are NOT blocked by OEM license.
+       We use this to download and register the setup script.
        ════════════════════════════════════════════════════════════ -->
   <settings pass="specialize">
+
     <component name="Microsoft-Windows-Shell-Setup"
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
-      <!-- Temporary name — within-setup.ps1 renames interactively -->
       <ComputerName>WITHIN-PC</ComputerName>
-      <!--
-        TIME ZONE — update per office location if needed:
-        US East    → Eastern Standard Time
-        US Central → Central Standard Time
-        Colombia   → SA Pacific Standard Time
-        Mexico     → Central Standard Time (Mexico)
-      -->
       <TimeZone>Eastern Standard Time</TimeZone>
       <RegisteredOrganization>WITHIN</RegisteredOrganization>
       <RegisteredOwner>WITHIN</RegisteredOwner>
     </component>
+
+    <component name="Microsoft-Windows-Deployment"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <RunSynchronous>
+
+        <!--
+          STEP 1: Fix within account password policy
+          Removes forced password change that Rufus sets on local accounts
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Fix within account password policy</Description>
+          <Path>net user within /logonpasswordchg:no</Path>
+        </RunSynchronousCommand>
+
+        <!--
+          STEP 2: Create Scripts directory
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Description>Create Setup Scripts directory</Description>
+          <Path>cmd.exe /c mkdir "C:\Windows\Setup\Scripts"</Path>
+        </RunSynchronousCommand>
+
+        <!--
+          STEP 3: Download within-setup.ps1 from GitHub
+          This runs in the specialize pass which has network access
+          and is NOT blocked by OEM license detection
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Description>Download WITHIN setup script from GitHub</Description>
+          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/within-co/new-win-device-setup/refs/heads/main/within-setup.ps1' -OutFile 'C:\Windows\Setup\Scripts\within-setup.ps1' -UseBasicParsing"</Path>
+        </RunSynchronousCommand>
+
+        <!--
+          STEP 4: Register Run key so script launches on first login
+          This is the trigger that shows the WITHIN setup window
+          when the user first logs into the within account
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Description>Register WITHIN setup script to run on first login</Description>
+          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "WITHINSetup" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-setup.ps1\"" /f</Path>
+        </RunSynchronousCommand>
+
+        <!--
+          STEP 5: Also add RunOnce as backup trigger
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <Description>Register WITHIN setup script RunOnce backup</Description>
+          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "WITHINSetupOnce" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-setup.ps1\"" /f</Path>
+        </RunSynchronousCommand>
+
+      </RunSynchronous>
+    </component>
+
   </settings>
 
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 3 — OOBE: Skip all screens, create account, auto-login
+       PHASE 3 - OOBE: Skip all screens, create account, auto-login
        ════════════════════════════════════════════════════════════ -->
   <settings pass="oobeSystem">
 
@@ -154,12 +216,10 @@
                publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
 
-      <!-- Skip every OOBE screen -->
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
         <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-        <!-- false = WiFi screen stays so machine can get online -->
         <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
         <NetworkLocation>Work</NetworkLocation>
         <ProtectYourPC>3</ProtectYourPC>
@@ -167,7 +227,6 @@
         <SkipUserOOBE>true</SkipUserOOBE>
       </OOBE>
 
-      <!-- Create standard WITHIN local admin account -->
       <UserAccounts>
         <LocalAccounts>
           <LocalAccount wcm:action="add">
@@ -175,7 +234,7 @@
             <DisplayName>within</DisplayName>
             <Group>Administrators</Group>
             <Password>
-              <!-- Kr1$t1n>4l3x — UTF-16LE Base64 encoded (not plain text) -->
+              <!-- Kr1$t1n>4l3x encoded as UTF-16LE Base64 -->
               <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
               <PlainText>false</PlainText>
             </Password>
@@ -183,7 +242,7 @@
         </LocalAccounts>
       </UserAccounts>
 
-      <!-- Auto-login ONCE as "within" to trigger the setup script -->
+      <!-- Auto-login once as within to trigger the Run key -->
       <AutoLogon>
         <Enabled>true</Enabled>
         <Username>within</Username>
@@ -194,19 +253,8 @@
         </Password>
       </AutoLogon>
 
-      <!-- Run within-setup.ps1 automatically on first login -->
-      <FirstLogonCommands>
-        <SynchronousCommand wcm:action="add">
-          <Order>1</Order>
-          <Description>WITHIN — Automated Device Setup (Dell + Lenovo)</Description>
-          <RequiresUserInput>false</RequiresUserInput>
-          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "C:\Windows\Setup\Scripts\within-setup.ps1"</CommandLine>
-        </SynchronousCommand>
-      </FirstLogonCommands>
-
     </component>
 
-    <!-- Locale settings -->
     <component name="Microsoft-Windows-International-Core"
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
