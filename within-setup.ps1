@@ -48,6 +48,20 @@ Write-Log "=================================================="
 Write-Log "WITHIN Setup Starting"
 Write-Log "=================================================="
 
+# Ensure within account never prompts for password change
+# Belt-and-suspenders fix for Rufus override
+try {
+    $localUser = Get-LocalUser -Name "within" -ErrorAction Stop
+    Set-LocalUser -Name "within" -PasswordNeverExpires $true
+    $localUser | Set-LocalUser -UserMayChangePassword $false
+    Write-Log "within account password policy set - no expiry, no forced change"
+} catch {
+    # Fallback for older PowerShell versions
+    net user within /logonpasswordchg:no 2>&1 | Out-Null
+    net user within /passwordchg:no 2>&1 | Out-Null
+    Write-Log "within account password policy set via net user"
+}
+
 # Detect manufacturer
 $cs           = Get-CimInstance -ClassName Win32_ComputerSystem
 $bios         = Get-CimInstance -ClassName Win32_BIOS
