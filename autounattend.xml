@@ -138,11 +138,11 @@
                language="neutral" versionScope="nonSxS">
       <RunSynchronous>
 
-        <!-- Step 1: Fix within account password policy -->
+        <!-- Step 1: Fix within account password policy - prevent forced change on login -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
           <Description>Fix within account password policy</Description>
-          <Path>cmd.exe /c net user within /logonpasswordchg:no &amp;&amp; net user within /passwordchg:no</Path>
+          <Path>cmd.exe /c net user within /logonpasswordchg:no &amp;&amp; net user within /passwordchg:no &amp;&amp; net accounts /maxpwage:unlimited</Path>
         </RunSynchronousCommand>
 
         <!-- Step 2: Create Scripts directory -->
@@ -214,6 +214,8 @@
               <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
               <PlainText>false</PlainText>
             </Password>
+            <!-- Prevent forced password change on first login -->
+            <PasswordExpires>false</PasswordExpires>
           </LocalAccount>
         </LocalAccounts>
       </UserAccounts>
