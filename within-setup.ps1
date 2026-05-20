@@ -574,14 +574,42 @@ $(if ($spareMode) {
            $rebootNote + $nextSteps + "`n`n" +
            "Restarting in 30 seconds..."
 
-    [System.Windows.Forms.MessageBox]::Show($msg, "WITHIN Setup Complete", "OK", "Information") | Out-Null
+    # Auto-closing summary window - no OK button needed, closes itself after 30s
+    $summary = New-Object System.Windows.Forms.Form
+    $summary.Text = "WITHIN Setup Complete"
+    $summary.Size = New-Object System.Drawing.Size(480, 380)
+    $summary.StartPosition = "CenterScreen"
+    $summary.FormBorderStyle = "FixedDialog"
+    $summary.MaximizeBox = $false
+    $summary.MinimizeBox = $false
+    $summary.TopMost = $true
+    $summary.BackColor = [System.Drawing.Color]::White
+
+    $summaryLbl = New-Object System.Windows.Forms.Label
+    $summaryLbl.Text = $msg
+    $summaryLbl.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $summaryLbl.Location = New-Object System.Drawing.Point(20, 20)
+    $summaryLbl.Size = New-Object System.Drawing.Size(440, 280)
+    $summary.Controls.Add($summaryLbl)
+
+    $countdownLbl = New-Object System.Windows.Forms.Label
+    $countdownLbl.Text = "Restarting in 30 seconds..."
+    $countdownLbl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $countdownLbl.ForeColor = [System.Drawing.Color]::Gray
+    $countdownLbl.Location = New-Object System.Drawing.Point(20, 310)
+    $countdownLbl.Size = New-Object System.Drawing.Size(440, 22)
+    $summary.Controls.Add($countdownLbl)
+
+    $summary.Show()
 
     for ($i = 30; $i -gt 0; $i--) {
+        $countdownLbl.Text = "Restarting in ${i} seconds..."
         $btn.Text = "Restarting in ${i}s..."
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Seconds 1
     }
 
+    $summary.Close()
     Write-Log "Restarting computer"
     Restart-Computer -Force
 })
