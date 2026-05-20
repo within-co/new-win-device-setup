@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 ╔══════════════════════════════════════════════════════════════════╗
-║   WITHIN - Universal Windows 11 Pro Deployment  v3.1            ║
+║   WITHIN - Universal Windows 11 Pro Deployment  v3.2            ║
 ║   Compatible: Dell Pro 14 PC14250 + Lenovo (any model)          ║
 ║   Works with: Windows 11 24H2 / 25H2 ISO via Rufus              ║
 ║                                                                  ║
 ║   HOW IT WORKS:                                                  ║
-║   - specialize pass sets a registry Run key (no network needed) ║
-║   - Run key fires on first login as "within"                    ║
-║   - At that point network IS available                          ║
-║   - Run key downloads within-setup.ps1 from GitHub then runs it ║
-║   - Setup window appears, IT enters computer name + user        ║
-║   - Script removes Run key so it never fires again              ║
+║   specialize pass (no network needed):                          ║
+║     1. Fixes within account password policy                     ║
+║     2. Creates C:\Windows\Setup\Scripts\                        ║
+║     3. Writes within-launcher.ps1 to disk (embedded in XML)    ║
+║     4. Sets Run key pointing to within-launcher.ps1            ║
+║   First login (network available):                              ║
+║     5. Run key fires within-launcher.ps1                       ║
+║     6. Launcher downloads within-setup.ps1 from GitHub         ║
+║     7. WITHIN setup window appears automatically               ║
 ╚══════════════════════════════════════════════════════════════════╝
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend"
@@ -114,10 +117,8 @@
 
   <!-- ════════════════════════════════════════════════════════════
        PHASE 2 - Specialize
-       No network available here - only set registry keys.
-       The Run key value is a self-contained PowerShell one-liner
-       that downloads and runs the script at first login when
-       network IS available.
+       No network here - write launcher script to disk and set
+       Run key. Launcher runs at first login when network is ready.
        ════════════════════════════════════════════════════════════ -->
   <settings pass="specialize">
 
@@ -137,14 +138,14 @@
                language="neutral" versionScope="nonSxS">
       <RunSynchronous>
 
-        <!-- Fix within account - remove forced password change -->
+        <!-- Step 1: Fix within account password policy -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
           <Description>Fix within account password policy</Description>
-          <Path>cmd.exe /c net user within /logonpasswordchg:no</Path>
+          <Path>cmd.exe /c net user within /logonpasswordchg:no &amp;&amp; net user within /passwordchg:no</Path>
         </RunSynchronousCommand>
 
-        <!-- Create Scripts directory -->
+        <!-- Step 2: Create Scripts directory -->
         <RunSynchronousCommand wcm:action="add">
           <Order>2</Order>
           <Description>Create Setup Scripts directory</Description>
@@ -152,17 +153,28 @@
         </RunSynchronousCommand>
 
         <!--
-          Set Run key with a self-contained one-liner that:
-          1. Waits for network
-          2. Downloads within-setup.ps1 from GitHub
-          3. Runs it immediately
-          This fires at first login when network is available.
-          The within-setup.ps1 script removes this key when done.
+          Step 3: Write within-launcher.ps1 to disk using PowerShell here-string.
+          No network needed - this is just writing a text file.
+          The launcher will download within-setup.ps1 at first login.
         -->
         <RunSynchronousCommand wcm:action="add">
           <Order>3</Order>
-          <Description>Set WITHIN setup Run key</Description>
-          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "WITHINSetup" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -Command \"$i=0; while(!(Test-NetConnection raw.githubusercontent.com -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue) -and $i -lt 12){Start-Sleep 5;$i++}; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/within-co/new-win-device-setup/refs/heads/main/within-setup.ps1' -OutFile 'C:\\Windows\\Setup\\Scripts\\within-setup.ps1' -UseBasicParsing; & 'C:\\Windows\\Setup\\Scripts\\within-setup.ps1'\"" /f</Path>
+          <Description>Write WITHIN launcher script to disk</Description>
+          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$content = @'`n# WITHIN Launcher v1.1`n# Fires on first login via registry Run key`n# Downloads and runs within-setup.ps1 from GitHub`n$ProgressPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue`n$LogFile = 'C:\Windows\Setup\Scripts\within-launcher.log'`n$dest = 'C:\Windows\Setup\Scripts\within-setup.ps1'`n$url = 'https://raw.githubusercontent.com/within-co/new-win-device-setup/refs/heads/main/within-setup.ps1'`nfunction Log($m) { `"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $m`" | Out-File -FilePath $LogFile -Append }`nLog 'WITHIN Launcher starting'`n$waited = 0`nwhile ($waited -lt 120) {`n    try { $null = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop; Log `"Network OK after ${waited}s`"; break }`n    catch { Log `"Waiting for network ${waited}s`"; Start-Sleep 10; $waited += 10 }`n}`nLog 'Downloading within-setup.ps1'`ntry { Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop; Log 'Download OK' }`ncatch { Log `"Download failed: $_`"; exit 1 }`nif (Test-Path $dest) { Log 'Launching setup'; &amp; $dest } else { Log 'Script missing after download' }`n'@`n$content | Out-File -FilePath 'C:\Windows\Setup\Scripts\within-launcher.ps1' -Encoding UTF8 -Force"</Path>
+        </RunSynchronousCommand>
+
+        <!-- Step 4: Set Run key pointing to launcher -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Description>Set WITHIN Run key</Description>
+          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "WITHINSetup" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-launcher.ps1\"" /f</Path>
+        </RunSynchronousCommand>
+
+        <!-- Step 5: RunOnce backup -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <Description>Set WITHIN RunOnce backup</Description>
+          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "WITHINSetupOnce" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-launcher.ps1\"" /f</Path>
         </RunSynchronousCommand>
 
       </RunSynchronous>
