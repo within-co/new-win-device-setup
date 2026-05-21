@@ -1,20 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 ╔══════════════════════════════════════════════════════════════════╗
-║   WITHIN - Universal Windows 11 Pro Deployment  v3.2            ║
+║   WITHIN - Universal Windows 11 Pro Deployment  v3.3            ║
 ║   Compatible: Dell Pro 14 PC14250 + Lenovo (any model)          ║
 ║   Works with: Windows 11 24H2 / 25H2 ISO via Rufus              ║
 ║                                                                  ║
-║   HOW IT WORKS:                                                  ║
-║   specialize pass (no network needed):                          ║
-║     1. Fixes within account password policy                     ║
-║     2. Creates C:\Windows\Setup\Scripts\                        ║
-║     3. Writes within-launcher.ps1 to disk (embedded in XML)    ║
-║     4. Sets Run key pointing to within-launcher.ps1            ║
-║   First login (network available):                              ║
-║     5. Run key fires within-launcher.ps1                       ║
-║     6. Launcher downloads within-setup.ps1 from GitHub         ║
-║     7. WITHIN setup window appears automatically               ║
+║   TRIGGER CHAIN:                                                 ║
+║   1. UseConfigurationSet copies $OEM$ files to machine          ║
+║   2. OOBE.cmd runs during OOBE (not blocked like SetupComplete) ║
+║   3. OOBE.cmd sets Run key + calls within-launcher.ps1          ║
+║   4. within-launcher.ps1 downloads within-setup.ps1 from GitHub ║
+║   5. WITHIN setup window appears                                ║
+║                                                                  ║
+║   REQUIRED USB STRUCTURE:                                        ║
+║   USB:\autounattend.xml                                          ║
+║   USB:\sources\autounattend.xml                                  ║
+║   USB:\drivers\vmd\iaStorVD.inf/.sys/.cat                        ║
+║   USB:\sources\$OEM$\$$\Setup\Scripts\OOBE.cmd                   ║
+║   USB:\sources\$OEM$\$$\Setup\Scripts\within-launcher.ps1        ║
+║   USB:\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd          ║
 ╚══════════════════════════════════════════════════════════════════╝
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend"
@@ -47,6 +51,10 @@
         <AcceptEula>true</AcceptEula>
       </UserData>
 
+      <!--
+        UseConfigurationSet = true ensures $OEM$ folder contents
+        are copied to the machine during setup
+      -->
       <UseConfigurationSet>true</UseConfigurationSet>
 
       <!-- Intel VMD NVMe driver - required for Dell Pro 14 PC14250 -->
@@ -116,12 +124,9 @@
   </settings>
 
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 2 - Specialize
-       No network here - write launcher script to disk and set
-       Run key. Launcher runs at first login when network is ready.
+       PHASE 2 - Specialize: Identity only, no RunSynchronous
        ════════════════════════════════════════════════════════════ -->
   <settings pass="specialize">
-
     <component name="Microsoft-Windows-Shell-Setup"
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
@@ -131,55 +136,6 @@
       <RegisteredOrganization>WITHIN</RegisteredOrganization>
       <RegisteredOwner>WITHIN</RegisteredOwner>
     </component>
-
-    <component name="Microsoft-Windows-Deployment"
-               processorArchitecture="amd64"
-               publicKeyToken="31bf3856ad364e35"
-               language="neutral" versionScope="nonSxS">
-      <RunSynchronous>
-
-        <!-- Step 1: Fix within account password policy - prevent forced change on login -->
-        <RunSynchronousCommand wcm:action="add">
-          <Order>1</Order>
-          <Description>Fix within account password policy</Description>
-          <Path>cmd.exe /c net user within /logonpasswordchg:no &amp;&amp; net user within /passwordchg:no &amp;&amp; net accounts /maxpwage:unlimited</Path>
-        </RunSynchronousCommand>
-
-        <!-- Step 2: Create Scripts directory -->
-        <RunSynchronousCommand wcm:action="add">
-          <Order>2</Order>
-          <Description>Create Setup Scripts directory</Description>
-          <Path>cmd.exe /c mkdir "C:\Windows\Setup\Scripts"</Path>
-        </RunSynchronousCommand>
-
-        <!--
-          Step 3: Write within-launcher.ps1 to disk using PowerShell here-string.
-          No network needed - this is just writing a text file.
-          The launcher will download within-setup.ps1 at first login.
-        -->
-        <RunSynchronousCommand wcm:action="add">
-          <Order>3</Order>
-          <Description>Write WITHIN launcher script to disk</Description>
-          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$content = @'`n# WITHIN Launcher v1.1`n# Fires on first login via registry Run key`n# Downloads and runs within-setup.ps1 from GitHub`n$ProgressPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue`n$LogFile = 'C:\Windows\Setup\Scripts\within-launcher.log'`n$dest = 'C:\Windows\Setup\Scripts\within-setup.ps1'`n$url = 'https://raw.githubusercontent.com/within-co/new-win-device-setup/refs/heads/main/within-setup.ps1'`nfunction Log($m) { `"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $m`" | Out-File -FilePath $LogFile -Append }`nLog 'WITHIN Launcher starting'`n$waited = 0`nwhile ($waited -lt 120) {`n    try { $null = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop; Log `"Network OK after ${waited}s`"; break }`n    catch { Log `"Waiting for network ${waited}s`"; Start-Sleep 10; $waited += 10 }`n}`nLog 'Downloading within-setup.ps1'`ntry { Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop; Log 'Download OK' }`ncatch { Log `"Download failed: $_`"; exit 1 }`nif (Test-Path $dest) { Log 'Launching setup'; &amp; $dest } else { Log 'Script missing after download' }`n'@`n$content | Out-File -FilePath 'C:\Windows\Setup\Scripts\within-launcher.ps1' -Encoding UTF8 -Force"</Path>
-        </RunSynchronousCommand>
-
-        <!-- Step 4: Set Run key pointing to launcher -->
-        <RunSynchronousCommand wcm:action="add">
-          <Order>4</Order>
-          <Description>Set WITHIN Run key</Description>
-          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "WITHINSetup" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-launcher.ps1\"" /f</Path>
-        </RunSynchronousCommand>
-
-        <!-- Step 5: RunOnce backup -->
-        <RunSynchronousCommand wcm:action="add">
-          <Order>5</Order>
-          <Description>Set WITHIN RunOnce backup</Description>
-          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "WITHINSetupOnce" /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File \"C:\Windows\Setup\Scripts\within-launcher.ps1\"" /f</Path>
-        </RunSynchronousCommand>
-
-      </RunSynchronous>
-    </component>
-
   </settings>
 
   <!-- ════════════════════════════════════════════════════════════
@@ -220,7 +176,7 @@
         </LocalAccounts>
       </UserAccounts>
 
-      <!-- Auto-login once as within to trigger the Run key -->
+      <!-- Auto-login once as within to trigger Run key / OOBE.cmd -->
       <AutoLogon>
         <Enabled>true</Enabled>
         <Username>within</Username>
