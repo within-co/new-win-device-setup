@@ -1,31 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 ╔══════════════════════════════════════════════════════════════════╗
-║   WITHIN - Universal Windows 11 Pro Deployment  v3.3            ║
+║   WITHIN - Universal Windows 11 Pro Deployment  v5.0            ║
+║   Based on: schneegans.de/windows/unattend-generator/           ║
 ║   Compatible: Dell Pro 14 PC14250 + Lenovo (any model)          ║
-║   Works with: Windows 11 24H2 / 25H2 ISO via Rufus              ║
 ║                                                                  ║
-║   TRIGGER CHAIN:                                                 ║
-║   1. UseConfigurationSet copies $OEM$ files to machine          ║
-║   2. OOBE.cmd runs during OOBE (not blocked like SetupComplete) ║
-║   3. OOBE.cmd sets Run key + calls within-launcher.ps1          ║
-║   4. within-launcher.ps1 downloads within-setup.ps1 from GitHub ║
-║   5. WITHIN setup window appears                                ║
+║   HOW IT WORKS (no $OEM$ folder needed):                        ║
+║   1. windowsPE: Injects VMD driver, partitions disk silently    ║
+║   2. specialize: ExtractScript writes PS1 files to disk         ║
+║      from XML - no network, no $OEM$ folder required            ║
+║   3. oobeSystem: AutoLogon as WITHIN, FirstLogonCommands        ║
+║      runs FirstLogon.ps1                                        ║
+║   4. FirstLogon.ps1: Downloads within-setup.ps1 from GitHub    ║
+║      and runs it - WITHIN setup window appears                  ║
 ║                                                                  ║
-║   REQUIRED USB STRUCTURE:                                        ║
-║   USB:\autounattend.xml                                          ║
-║   USB:\sources\autounattend.xml                                  ║
-║   USB:\drivers\vmd\iaStorVD.inf/.sys/.cat                        ║
-║   USB:\sources\$OEM$\$$\Setup\Scripts\OOBE.cmd                   ║
-║   USB:\sources\$OEM$\$$\Setup\Scripts\within-launcher.ps1        ║
-║   USB:\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd          ║
+║   USB STRUCTURE (minimal):                                      ║
+║   USB:\autounattend.xml         <- this file                    ║
+║   USB:\sources\autounattend.xml <- copy                         ║
+║   USB:\drivers\vmd\iaStorVD.*   <- Dell VMD NVMe driver         ║
 ╚══════════════════════════════════════════════════════════════════╝
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend"
           xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
 
+  <settings pass="offlineServicing"></settings>
+
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 1 - Windows PE: Language + VMD driver + disk setup
+       PHASE 1 - Windows PE
+       Bypass checks + VMD driver + silent disk partitioning
        ════════════════════════════════════════════════════════════ -->
   <settings pass="windowsPE">
 
@@ -33,13 +35,7 @@
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
-      <SetupUILanguage>
-        <UILanguage>en-US</UILanguage>
-      </SetupUILanguage>
-      <InputLocale>en-US</InputLocale>
-      <SystemLocale>en-US</SystemLocale>
       <UILanguage>en-US</UILanguage>
-      <UserLocale>en-US</UserLocale>
     </component>
 
     <component name="Microsoft-Windows-Setup"
@@ -48,23 +44,41 @@
                language="neutral" versionScope="nonSxS">
 
       <UserData>
+        <ProductKey>
+          <!-- Generic Windows 11 Pro key - machine activates from OEM UEFI -->
+          <Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key>
+          <WillShowUI>OnError</WillShowUI>
+        </ProductKey>
         <AcceptEula>true</AcceptEula>
       </UserData>
 
-      <!--
-        UseConfigurationSet = true ensures $OEM$ folder contents
-        are copied to the machine during setup
-      -->
+      <!-- Required for schneegans ExtractScript mechanism -->
       <UseConfigurationSet>true</UseConfigurationSet>
 
-      <!-- Intel VMD NVMe driver - required for Dell Pro 14 PC14250 -->
+      <!-- Intel VMD NVMe driver - fixes 0x8004255A on Dell Pro 14 PC14250 -->
       <DriverPaths>
         <PathAndCredentials wcm:action="add" wcm:keyValue="1">
           <Path>\drivers\vmd</Path>
         </PathAndCredentials>
       </DriverPaths>
 
-      <!-- Silent disk partitioning -->
+      <!-- Bypass TPM/SecureBoot/RAM requirements -->
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+
+      <!-- Silent disk partitioning - WillShowUI=Never skips partition screen -->
       <DiskConfiguration>
         <WillShowUI>Never</WillShowUI>
         <Disk wcm:action="add">
@@ -123,82 +137,238 @@
     </component>
   </settings>
 
+  <settings pass="generalize"></settings>
+
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 2 - Specialize: Identity only, no RunSynchronous
+       PHASE 2 - Specialize
+       ExtractScript writes PS1 files from XML to disk.
+       No network needed - pure file extraction.
        ════════════════════════════════════════════════════════════ -->
   <settings pass="specialize">
+
     <component name="Microsoft-Windows-Shell-Setup"
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
-      <ComputerName>WITHIN-PC</ComputerName>
       <TimeZone>Eastern Standard Time</TimeZone>
-      <RegisteredOrganization>WITHIN</RegisteredOrganization>
-      <RegisteredOwner>WITHIN</RegisteredOwner>
     </component>
+
+    <component name="Microsoft-Windows-Deployment"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <RunSynchronous>
+
+        <!-- Step 1: Extract all embedded PS1 files from XML to disk -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>powershell.exe -WindowStyle "Normal" -NoProfile -Command "$xml = [xml]::new(); $xml.Load('C:\Windows\Panther\unattend.xml'); $sb = [scriptblock]::Create( $xml.unattend.Extensions.ExtractScript ); Invoke-Command -ScriptBlock $sb -ArgumentList $xml;"</Path>
+        </RunSynchronousCommand>
+
+        <!-- Step 2: Run Specialize.ps1 (extracted above) -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Path>powershell.exe -WindowStyle "Normal" -ExecutionPolicy "Unrestricted" -NoProfile -File "C:\Windows\Setup\Scripts\Specialize.ps1"</Path>
+        </RunSynchronousCommand>
+
+      </RunSynchronous>
+    </component>
+
   </settings>
 
+  <settings pass="auditSystem"></settings>
+  <settings pass="auditUser"></settings>
+
   <!-- ════════════════════════════════════════════════════════════
-       PHASE 3 - OOBE: Skip screens, create account, auto-login
+       PHASE 3 - OOBE
+       Create WITHIN account, AutoLogon once, run FirstLogon.ps1
        ════════════════════════════════════════════════════════════ -->
   <settings pass="oobeSystem">
-
-    <component name="Microsoft-Windows-Shell-Setup"
-               processorArchitecture="amd64"
-               publicKeyToken="31bf3856ad364e35"
-               language="neutral" versionScope="nonSxS">
-
-      <OOBE>
-        <HideEULAPage>true</HideEULAPage>
-        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
-        <NetworkLocation>Work</NetworkLocation>
-        <ProtectYourPC>3</ProtectYourPC>
-        <SkipMachineOOBE>true</SkipMachineOOBE>
-        <SkipUserOOBE>true</SkipUserOOBE>
-      </OOBE>
-
-      <UserAccounts>
-        <LocalAccounts>
-          <LocalAccount wcm:action="add">
-            <Name>within</Name>
-            <DisplayName>within</DisplayName>
-            <Group>Administrators</Group>
-            <Password>
-              <!-- Kr1$t1n>4l3x - UTF-16LE Base64 encoded -->
-              <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
-              <PlainText>false</PlainText>
-            </Password>
-            <!-- Prevent forced password change on first login -->
-            <PasswordExpires>false</PasswordExpires>
-          </LocalAccount>
-        </LocalAccounts>
-      </UserAccounts>
-
-      <!-- Auto-login once as within to trigger Run key / OOBE.cmd -->
-      <AutoLogon>
-        <Enabled>true</Enabled>
-        <Username>within</Username>
-        <LogonCount>1</LogonCount>
-        <Password>
-          <Value>SwByADEAJAB0ADEAbgA+ADQAbAAzAHgAUABhAHMAcwB3AG8AcgBkAA==</Value>
-          <PlainText>false</PlainText>
-        </Password>
-      </AutoLogon>
-
-    </component>
 
     <component name="Microsoft-Windows-International-Core"
                processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
-      <InputLocale>en-US</InputLocale>
+      <InputLocale>0409:00000409</InputLocale>
       <SystemLocale>en-US</SystemLocale>
       <UILanguage>en-US</UILanguage>
       <UserLocale>en-US</UserLocale>
     </component>
 
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>WITHIN</Name>
+            <DisplayName>WITHIN</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <!-- Kr1$t1n>4l3x stored as plain text (schneegans approach) -->
+              <Value>Kr1$t1n&gt;4l3x</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- Auto-login once as WITHIN to trigger FirstLogonCommands -->
+      <AutoLogon>
+        <Username>WITHIN</Username>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+        <Password>
+          <Value>Kr1$t1n&gt;4l3x</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <OOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+        <HideEULAPage>true</HideEULAPage>
+        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+
+      <!-- Runs FirstLogon.ps1 which was extracted to disk during specialize -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>powershell.exe -WindowStyle "Normal" -ExecutionPolicy "Unrestricted" -NoProfile -File "C:\Windows\Setup\Scripts\FirstLogon.ps1"</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+    </component>
+
+    <!-- Prevent BitLocker auto-encryption -->
+    <component name="Microsoft-Windows-SecureStartup-FilterDriver"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <PreventDeviceEncryption>true</PreventDeviceEncryption>
+    </component>
+
   </settings>
+
+  <!-- ════════════════════════════════════════════════════════════
+       EXTENSIONS - Scripts embedded in XML
+       ExtractScript writes these to disk during specialize pass.
+       No $OEM$ folder, no network, no SetupComplete.cmd needed.
+       ════════════════════════════════════════════════════════════ -->
+  <Extensions xmlns="https://schneegans.de/windows/unattend-generator/">
+
+    <!-- ExtractScript: reads this XML and writes File elements to disk -->
+    <ExtractScript>
+param(
+    [xml] $Document
+);
+
+foreach( $file in $Document.unattend.Extensions.File ) {
+    $path = [System.Environment]::ExpandEnvironmentVariables( $file.GetAttribute( 'path' ) );
+    mkdir -Path( $path | Split-Path -Parent ) -ErrorAction 'SilentlyContinue';
+    $encoding = switch( [System.IO.Path]::GetExtension( $path ) ) {
+        { $_ -in '.ps1', '.xml' } { [System.Text.Encoding]::UTF8; }
+        { $_ -in '.reg', '.vbs', '.js' } { [System.Text.UnicodeEncoding]::new( $false, $true ); }
+        default { [System.Text.Encoding]::Default; }
+    };
+    $bytes = $encoding.GetPreamble() + $encoding.GetBytes( $file.InnerText.Trim() );
+    [System.IO.File]::WriteAllBytes( $path, $bytes );
+}
+    </ExtractScript>
+
+    <!-- ── Specialize.ps1: runs during specialize pass ── -->
+    <File path="C:\Windows\Setup\Scripts\Specialize.ps1">
+$scripts = @(
+    {
+        reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f;
+    };
+    {
+        net.exe accounts /maxpwage:UNLIMITED;
+    };
+    {
+        reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\BitLocker" /v "PreventDeviceEncryption" /t REG_DWORD /d 1 /f;
+    };
+    {
+        # Fix WITHIN account - no forced password change
+        net.exe user WITHIN /logonpasswordchg:no;
+    };
+);
+
+&amp; {
+  [float] $complete = 0;
+  [float] $increment = 100 / $scripts.Count;
+  foreach( $script in $scripts ) {
+    Write-Progress -Id 0 -Activity 'WITHIN: Customizing Windows installation...' -PercentComplete $complete;
+    $start = [datetime]::Now;
+    &amp; $script;
+    $complete += $increment;
+  }
+} *&gt;&amp;1 | Out-String -Width 1KB -Stream &gt;&gt; "C:\Windows\Setup\Scripts\Specialize.log";
+    </File>
+
+    <!-- ── FirstLogon.ps1: runs on first login via FirstLogonCommands ── -->
+    <File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
+$scripts = @(
+    {
+        # Disable autologon counter so WITHIN does not auto-login again
+        Set-ItemProperty -LiteralPath 'Registry::HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'AutoLogonCount' -Type 'DWord' -Force -Value 0;
+    };
+    {
+        # Download and run within-setup.ps1 from GitHub
+        &amp; 'C:\Windows\Setup\Scripts\unattend-01.ps1';
+    };
+    {
+        # Clean up unattend files
+        Remove-Item -LiteralPath @(
+          'C:\Windows\Panther\unattend.xml';
+          'C:\Windows\Panther\unattend-original.xml';
+        ) -Force -ErrorAction 'SilentlyContinue';
+    };
+);
+
+&amp; {
+  [float] $complete = 0;
+  [float] $increment = 100 / $scripts.Count;
+  foreach( $script in $scripts ) {
+    Write-Progress -Id 0 -Activity 'WITHIN: Finalizing Windows installation...' -PercentComplete $complete;
+    $start = [datetime]::Now;
+    &amp; $script;
+    $complete += $increment;
+  }
+} *&gt;&amp;1 | Out-String -Width 1KB -Stream &gt;&gt; "C:\Windows\Setup\Scripts\FirstLogon.log";
+    </File>
+
+    <!-- ── unattend-01.ps1: downloads and runs within-setup.ps1 from GitHub ── -->
+    <File path="C:\Windows\Setup\Scripts\unattend-01.ps1">
+$ProgressPreference = 'SilentlyContinue'
+$dest = 'C:\Windows\Setup\Scripts\within-setup.ps1'
+$url  = 'https://raw.githubusercontent.com/within-co/new-win-device-setup/refs/heads/main/within-setup.ps1'
+
+# Wait for network
+$i = 0
+while ($i -lt 12) {
+    try {
+        $null = Invoke-WebRequest -Uri 'https://raw.githubusercontent.com' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        break
+    } catch {
+        Start-Sleep 10
+        $i++
+    }
+}
+
+# Download and run within-setup.ps1
+Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+if (Test-Path $dest) {
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dest
+}
+    </File>
+
+  </Extensions>
 
 </unattend>
