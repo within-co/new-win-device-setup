@@ -1,10 +1,10 @@
 #Requires -RunAsAdministrator
 # =============================================================================
 #  WITHIN - Automated Device Setup Script
-#  within-setup.ps1  v2.4
+#  within-setup.ps1  v2.5
 #  Changes from v2.3:
 #  - Optional Entra ID join: checkbox "Assign user now" shows/hides credentials
-#  - If skipped, machine is saved as spare (local within account + ManageEngine)
+#  - If skipped, machine is saved as spare (local WITHIN account + ManageEngine)
 #  - Entra join can be done later manually or via ManageEngine remote script
 #  - Restart at end (required for BIOS AHCI + Entra join to apply)
 # =============================================================================
@@ -51,15 +51,15 @@ Write-Log "=================================================="
 # Ensure within account never prompts for password change
 # Belt-and-suspenders fix for Rufus override
 try {
-    $localUser = Get-LocalUser -Name "within" -ErrorAction Stop
-    Set-LocalUser -Name "within" -PasswordNeverExpires $true
-    $localUser | Set-LocalUser -UserMayChangePassword $false
-    Write-Log "within account password policy set - no expiry, no forced change"
+    $localUser = Get-LocalUser -Name "WITHIN" -ErrorAction Stop
+    Set-LocalUser -Name "WITHIN" -PasswordNeverExpires $true
+    $localUser | Set-LocalUser -UserMayChangePassword $true
+    Write-Log "WITHIN account password policy set - no expiry, no forced change"
 } catch {
     # Fallback for older PowerShell versions
-    net user within /logonpasswordchg:no 2>&1 | Out-Null
-    net user within /passwordchg:no 2>&1 | Out-Null
-    Write-Log "within account password policy set via net user"
+    net user WITHIN /logonpasswordchg:no 2>&1 | Out-Null
+    net user WITHIN /passwordchg:no 2>&1 | Out-Null
+    Write-Log "WITHIN account password policy set via net user"
 }
 
 # Detect manufacturer
@@ -307,7 +307,7 @@ $btn.Add_Click({
     $emailBox.Enabled  = $false
     $passBox.Enabled   = $false
     $btn.Text          = "Running..."
-    $tempDir           = "$env:TEMP\within_setup"
+    $tempDir           = "$env:TEMP\WITHIN_setup"
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
     $spareMode = -not $assignNow
@@ -529,7 +529,7 @@ $btn.Add_Click({
     # STEP 6 - Save device info
     # =========================================================================
     $assignedUser = if ($assignNow) { $userEmail } else { "Unassigned (spare)" }
-    $infoFile = "C:\Users\within\Desktop\device-info.txt"
+    $infoFile = "C:\Users\WITHIN\Desktop\device-info.txt"
     @"
 WITHIN Device Info
 ==================
