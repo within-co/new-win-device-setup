@@ -81,7 +81,7 @@ Write-Log "Serial       : $serial"
 # =============================================================================
 $form                  = New-Object System.Windows.Forms.Form
 $form.Text             = "WITHIN - Device Setup"
-$form.Size             = New-Object System.Drawing.Size(580, 660)
+$form.Size             = New-Object System.Drawing.Size(580, 740)
 $form.StartPosition    = "CenterScreen"
 $form.FormBorderStyle  = "FixedDialog"
 $form.MaximizeBox      = $false
@@ -246,7 +246,7 @@ function Update-Status {
 $btn           = New-Object System.Windows.Forms.Button
 $btn.Text      = "Start Setup"
 $btn.Font      = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$btn.Location  = New-Object System.Drawing.Point(20, 574)
+$btn.Location  = New-Object System.Drawing.Point(20, 654)
 $btn.Size      = New-Object System.Drawing.Size(150, 40)
 $btn.BackColor = [System.Drawing.Color]::Black
 $btn.ForeColor = [System.Drawing.Color]::White
@@ -257,7 +257,7 @@ $footNote           = New-Object System.Windows.Forms.Label
 $footNote.Text      = "Machine restarts automatically when done."
 $footNote.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
 $footNote.ForeColor = [System.Drawing.Color]::Gray
-$footNote.Location  = New-Object System.Drawing.Point(185, 586)
+$footNote.Location  = New-Object System.Drawing.Point(185, 666)
 $footNote.Size      = New-Object System.Drawing.Size(375, 18)
 $form.Controls.Add($footNote)
 
