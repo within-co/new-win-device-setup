@@ -298,6 +298,64 @@ $scripts = @(
         # Fix WITHIN account - no forced password change
         net.exe user WITHIN /logonpasswordchg:no;
     };
+    {
+        # DEBLOAT: Remove bloatware apps silently
+        $bloatware = @(
+            "Microsoft.XboxApp","Microsoft.XboxGameOverlay","Microsoft.XboxGamingOverlay",
+            "Microsoft.XboxIdentityProvider","Microsoft.XboxSpeechToTextOverlay",
+            "Microsoft.GamingApp","Microsoft.Xbox.TCUI",
+            "Microsoft.BingSearch","Microsoft.BingNews","Microsoft.BingWeather",
+            "Microsoft.BingFinance","Microsoft.BingSports","Microsoft.BingTranslator",
+            "Microsoft.Copilot","Microsoft.Windows.Copilot",
+            "Microsoft.News","MicrosoftWindows.Client.WebExperience",
+            "Microsoft.PowerAutomateDesktop",
+            "Microsoft.GetHelp","Microsoft.Getstarted","Microsoft.WindowsFeedbackHub",
+            "Microsoft.ZuneMusic","Microsoft.ZuneVideo",
+            "Microsoft.MicrosoftSolitaireCollection","Microsoft.MicrosoftStickyNotes",
+            "Microsoft.People","Microsoft.WindowsCommunicationsApps","Microsoft.WindowsMaps",
+            "Microsoft.YourPhone","Microsoft.549981C3F5F10","Microsoft.Todos",
+            "Microsoft.OutlookForWindows","MicrosoftCorporationII.QuickAssist",
+            "Clipchamp.Clipchamp","Microsoft.MicrosoftJournal","Microsoft.WindowsSoundRecorder",
+            "Microsoft.Family","Microsoft.Microsoft3DViewer","Microsoft.MixedReality.Portal"
+        )
+        foreach ($app in $bloatware) {
+            Get-AppxPackage -AllUsers -Name $app -ErrorAction SilentlyContinue |
+                Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+            Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
+                Where-Object { $_.PackageName -like "*$app*" } |
+                Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
+        }
+    };
+    {
+        # Disable Widgets / News panel
+        reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Dsh" /v AllowNewsAndInterests /t REG_DWORD /d 0 /f
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\default\NewsAndInterests\AllowNewsAndInterests" /v value /t REG_DWORD /d 0 /f
+    };
+    {
+        # Disable Copilot completely
+        reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" /v TurnOffWindowsCopilot /t REG_DWORD /d 1 /f
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Start" /v ConfigureStartPins /t REG_SZ /d "{}" /f
+    };
+    {
+        # Clear Start Menu pinned apps - empty start menu for all new users
+        $xml = '<?xml version="1.0" encoding="utf-8"?><LayoutModificationTemplate xmlns="http://schemas.microsoft.com/Start/2014/LayoutModification" xmlns:defaultlayout="http://schemas.microsoft.com/Start/2014/FullDefaultLayout" xmlns:start="http://schemas.microsoft.com/Start/2014/StartLayout" Version="1"><LayoutOptions StartTileGroupCellWidth="6" /><DefaultLayoutOverride><StartLayoutCollection><defaultlayout:StartLayout GroupCellWidth="6" /></StartLayoutCollection></DefaultLayoutOverride></LayoutModificationTemplate>'
+        $dir = "C:\Users\Default\AppData\Local\Microsoft\Windows\Shell"
+        New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue | Out-Null
+        $xml | Out-File -FilePath "$dir\LayoutModification.xml" -Encoding UTF8 -Force -ErrorAction SilentlyContinue
+    };
+    {
+        # Disable Chat (Teams consumer) icon on taskbar
+        reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" /v ChatIcon /t REG_DWORD /d 3 /f
+    };
+    {
+        # Disable CEIP and telemetry scheduled tasks
+        @(
+            "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
+            "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+            "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+            "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip"
+        ) | ForEach-Object { schtasks.exe /Change /TN $_ /Disable 2>$null }
+    };
 );
 
 &amp; {
