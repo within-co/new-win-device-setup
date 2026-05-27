@@ -81,8 +81,12 @@ Write-Log "Serial       : $serial"
 # =============================================================================
 $form                  = New-Object System.Windows.Forms.Form
 $form.Text             = "WITHIN - Device Setup"
-$form.Size             = New-Object System.Drawing.Size(580, 740)
+$form.Size             = New-Object System.Drawing.Size(560, 620)
 $form.StartPosition    = "CenterScreen"
+$form.MinimumSize      = New-Object System.Drawing.Size(560, 620)
+# Ensure form fits on screen
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+if ($form.Height -gt $screen.Height) { $form.Height = $screen.Height - 40 }
 $form.FormBorderStyle  = "FixedDialog"
 $form.MaximizeBox      = $false
 $form.MinimizeBox      = $false
@@ -229,8 +233,8 @@ $form.Controls.Add($statusLbl)
 
 $statusBox          = New-Object System.Windows.Forms.ListBox
 $statusBox.Font     = New-Object System.Drawing.Font("Consolas", 8)
-$statusBox.Location = New-Object System.Drawing.Point(20, 378)
-$statusBox.Size     = New-Object System.Drawing.Size(540, 178)
+$statusBox.Location = New-Object System.Drawing.Point(20, 370)
+$statusBox.Size     = New-Object System.Drawing.Size(520, 140)
 $form.Controls.Add($statusBox)
 
 function Update-Status {
@@ -246,8 +250,8 @@ function Update-Status {
 $btn           = New-Object System.Windows.Forms.Button
 $btn.Text      = "Start Setup"
 $btn.Font      = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$btn.Location  = New-Object System.Drawing.Point(20, 654)
-$btn.Size      = New-Object System.Drawing.Size(150, 40)
+$btn.Location  = New-Object System.Drawing.Point(20, 528)
+$btn.Size      = New-Object System.Drawing.Size(180, 45)
 $btn.BackColor = [System.Drawing.Color]::Black
 $btn.ForeColor = [System.Drawing.Color]::White
 $btn.FlatStyle = "Flat"
@@ -257,7 +261,7 @@ $footNote           = New-Object System.Windows.Forms.Label
 $footNote.Text      = "Machine restarts automatically when done."
 $footNote.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
 $footNote.ForeColor = [System.Drawing.Color]::Gray
-$footNote.Location  = New-Object System.Drawing.Point(185, 666)
+$footNote.Location  = New-Object System.Drawing.Point(210, 540)
 $footNote.Size      = New-Object System.Drawing.Size(375, 18)
 $form.Controls.Add($footNote)
 
